@@ -29,6 +29,22 @@ timeval left_stamp, right_stamp;
 
 static int rate = 10;
 
+static void saveXYZ(const char* filename, const cv::Mat& mat)
+{
+    const double max_z = 1.0e4;
+    FILE* fp = fopen(filename, "wt");
+    for(int y = 0; y < mat.rows; y++)
+    {
+        for(int x = 0; x < mat.cols; x++)
+        {
+            cv::Vec3f point = mat.at<cv::Vec3f>(y, x);
+            if(fabs(point[2] - max_z) < FLT_EPSILON || fabs(point[2]) > max_z) continue;
+            fprintf(fp, "%f %f %f\n", point[0], point[1], point[2]);
+        }
+    }
+    fclose(fp);
+}
+
 /**
 	* date:2017.5.29
 	* valen
@@ -37,7 +53,7 @@ static int rate = 10;
 	* http://blog.csdn.net/chentravelling/article/details/70254682;
 	* http://www.cnblogs.com/grandyang/p/5805261.html
 	* http://docs.opencv.org/master/d9/dba/classcv_1_1StereoBM.html
-	*/
+*/
 void *opencv_showimg(void*)
 {
 	cv::Mat img_left;
@@ -95,13 +111,13 @@ void *opencv_showimg(void*)
 			// cv::imshow("left", img_left);
 			// cv::imshow("right", img_right);
 
-			//相机内参
+			//相机标定阶段
 			cv::Mat left_m, left_d, right_m, right_d;
 			left_m = (cv::Mat_<double>(3, 3) << 461.599631 , 0.000000, 385.421541,	0.000000, 461.949571 , 274.545319, 0.000000, 0.000000 , 1.000000);
 			left_d = (cv::Mat_<double>(5, 1) << -0.384259, 0.122324, -0.000004, -0.001681, 0.000000);
 			right_m = (cv::Mat_<double>(3, 3) << 465.330915, 0.000000, 380.598352, 0.000000, 466.862222, 204.123244, 0.000000 , 0.000000 , 1.000000);
 			right_d = (cv::Mat_<double>(5, 1) << -0.369965, 0.102771, 0.002052, 0.003675, 0.000000);
-
+			//立体校准优化
 			cv::Mat disp;
 			cv::Mat Q, R1, R2, P1, P2;
 			cv::Rect roi_left, roi_right;
@@ -111,18 +127,29 @@ void *opencv_showimg(void*)
 			R = (cv::Mat_<double>(3, 3) << 0.9987819593989379, -0.0031174759824076997, 0.04924305964009116, 0.002459363552277384, 0.9999069297666924, 0.013419513235013242, -0.04928031158724743, -0.013282061136965045, 0.9986966695357593);
 			cv::stereoRectify( left_m, left_d, right_m, right_d, img_left.size(), R, T, R1, R2, P1, P2, Q, 1, -1, img_left.size(), &roi_left, &roi_right);
 			
-			
+			//立体匹配阶段
 			cv::Ptr<cv::StereoBM> bm = cv::StereoBM::create(16, 9);
+			//预处理起类型，降低亮度失真，消除噪声和增强纹理归一化的类型
 			bm->setPreFilterType(CV_STEREO_BM_NORMALIZED_RESPONSE);
+			//预处理滤波器窗口大小5*5 - 21*21之间
 			bm->setPreFilterSize(9);
+			//预处理滤波器的截断值，预处理的输出值仅保留[-preFilterCap, preFilterCap]范围内的值，参数范围：1 - 31
 			bm->setPreFilterCap(31);
-			bm->setBlockSize(21);
-			bm->setMinDisparity(-16);
+			//SAD窗口大小，容许范围是[5,255]，一般应该在 5x5 至 21x21 之间，参数必须是奇数
+			bm->setBlockSize(9);
+			//最小视差，默认值为 0, 可以是负值，int 型
+			bm->setMinDisparity(0);
+			//视差窗口，即最大视差值与最小视差值之差, 窗口大小必须是 16 的整数倍
 			bm->setNumDisparities(64);
+			//低纹理区域的判断阈值。如果当前SAD窗口内所有邻居像素点的x导数绝对值之和小于指定阈值，则该窗口对应的像素点的视差值为 0
 			bm->setTextureThreshold(10);
+			//视差唯一性百分比， 视差窗口范围内最低代价是次低代价的(1 + uniquenessRatio/100)倍时，最低代价对应的视差值才是该像素点的视差，否则该像素点的视差为 0 ，该参数不能为负值，一般5-15左右的值比较合适，int 型
 			bm->setUniquenessRatio(rate);
+			//检查视差连通区域变化度的窗口大小, 值为 0 时取消 speckle 检查
 			bm->setSpeckleWindowSize(100);
+			//视差变化阈值，当窗口内视差变化大于阈值时，该窗口内的视差清零
 			bm->setSpeckleRange(32);
+			//左右视图的有效像素区域，一般由双目校正阶段的 cvStereoRectify 函数传递，也可以自行设定。一旦在状态参数中设定了 roi1 和 roi2，OpenCV 会通过cvGetValidDisparityROI 函数计算出视差图的有效区域，在有效区域外的视差值将被清零。
 			bm->setROI1(roi_left);
 			bm->setROI2(roi_right);
 
@@ -144,28 +171,23 @@ void *opencv_showimg(void*)
 			// 生成并显示点云
 			cv::Mat xyz;
 			cv::reprojectImageTo3D(disp, xyz, Q, true);
-			cv::Vec3f point;
-			for (int y = 0; y < xyz.rows; y++)
-			{
-				for (int x = 0; x < xyz.cols; x++)
-				{
-					point = xyz.at<cv::Vec3f>(y, x);
-					if (point[2] < 100)
-						cout << point[2] << endl;
-				}
-			}
+
+			saveXYZ("data_disp.txt", xyz);
 			cvWaitKey(1);
 		}
 	}
 	pthread_exit(NULL);
 }
 
-
+/**
+ * 显示imu数据函数变为动态采集视差唯一性百分比参数
+ */
 void* show_imuData(void *)
 {
 	int counter = 0;
 	while (1)
 	{
+		//视差唯一性百分比
 		cin >> rate;
 		// if (visensor_imu_have_fresh_data())
 		// {
