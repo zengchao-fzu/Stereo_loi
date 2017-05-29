@@ -3,10 +3,10 @@ build/*
 *.a
 *.o
 *.so
-CMakeCache.txt
-CMakeFiles/*
-Makefile
-cmake_install.cmake
+/SDK/CMakeCache.txt
+/SDK/CMakeFiles/*
+/SDK/Makefile
+/SDK/cmake_install.cmake
 *.bin
 *.out
-Stereo_loi/SDK/camtest2
+/SDK/camtest2
