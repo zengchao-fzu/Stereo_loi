@@ -10,3 +10,5 @@ build/*
 *.bin
 *.out
 /SDK/camtest2
+/SDK/build
+/SDK/build/*
