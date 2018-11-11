@@ -12,3 +12,4 @@ build/*
 /SDK/camtest2
 /SDK/build
 /SDK/build/*
+*.rules
