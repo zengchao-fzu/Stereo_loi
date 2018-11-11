@@ -1,14 +1,17 @@
 cmake_minimum_required(VERSION 2.8)
 
-project(camtest2)
+project(camtest)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -pthread")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
 
 find_package(OpenCV REQUIRED)
 
-include_directories("${PROJECT_SOURCE_DIR}/src")
-link_directories("${PROJECT_SOURCE_DIR}/src")
+include_directories("${PROJECT_SOURCE_DIR}/include")
 
-add_executable(camtest2 src/camtest2.cpp)
+add_library(loitorusbcam src/loitorusb.cpp src/loitorcam.cpp)
+target_link_libraries(loitorusbcam loitorimu)
 
-target_link_libraries(camtest2 loitorusbcam loitorimu usb-1.0 ${OpenCV_LIBS})
+add_library(loitorimu src/loitorimu.cpp)
+
+add_executable(camtest src/camtest.cpp)
+target_link_libraries(camtest loitorusbcam loitorimu usb-1.0 ${OpenCV_LIBS})
